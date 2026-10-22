@@ -19,6 +19,18 @@
 
     <!-- Google Mobile Ads / AdMob SDK Script -->
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js" crossorigin="anonymous"></script>
+
+    <style>
+        /* Animated laser scanning bar for live frame */
+        @keyframes scanAnimation {
+            0% { top: 5%; opacity: 0.8; }
+            50% { top: 90%; opacity: 0.8; }
+            100% { top: 5%; opacity: 0.8; }
+        }
+        .scan-laser {
+            animation: scanAnimation 2.5s infinite ease-in-out;
+        }
+    </style>
 </head>
 <body class="bg-slate-50 text-slate-800 min-h-screen flex flex-col justify-between">
 
@@ -48,10 +60,9 @@
 
         <!-- Action Buttons -->
         <div class="grid grid-cols-2 gap-3">
-            <label class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-xl shadow cursor-pointer text-center flex items-center justify-center gap-2 transition">
+            <button id="openCameraBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-xl shadow text-center flex items-center justify-center gap-2 transition">
                 <span>📷 Capture Page</span>
-                <input type="file" id="cameraInput" accept="image/*" capture="environment" class="hidden">
-            </label>
+            </button>
 
             <button id="generatePdfBtn" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-4 rounded-xl shadow flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>
                 <span>💾 Save PDF (<span id="pageCount">0</span>)</span>
@@ -94,11 +105,47 @@
         <a href="privacy.html" class="text-[11px] text-slate-500 hover:underline">Privacy Policy</a>
     </footer>
 
-    <!-- Interactive Crop Frame Modal Overlay -->
-    <div id="cropModal" class="fixed inset-0 bg-black/80 hidden flex-col items-center justify-between p-4 z-50">
+    <!-- LIVE CAMERA MODAL WITH OVERLAY FRAME -->
+    <div id="liveCameraModal" class="fixed inset-0 bg-black hidden flex-col items-center justify-between z-50">
+        <!-- Live Camera Header -->
+        <div class="w-full p-4 flex justify-between items-center bg-black/60 text-white z-10">
+            <span class="text-xs font-semibold uppercase tracking-wider text-blue-400">Align document in frame</span>
+            <button id="closeCameraBtn" class="text-white bg-slate-800 px-3 py-1 rounded-lg text-xs hover:bg-slate-700">Close</button>
+        </div>
+
+        <!-- Live Stream & Detection Frame Box -->
+        <div class="relative w-full flex-1 flex items-center justify-center overflow-hidden">
+            <video id="videoFeed" autoplay playsinline class="absolute inset-0 w-full h-full object-cover"></video>
+            
+            <!-- Real-Time Paper Frame Box -->
+            <div class="relative w-[82%] h-[72%] border-2 border-emerald-400 rounded-lg shadow-[0_0_15px_rgba(52,211,153,0.5)] z-10 pointer-events-none flex flex-col justify-between p-2">
+                <!-- Corner Indicators -->
+                <div class="flex justify-between">
+                    <div class="w-4 h-4 border-t-4 border-l-4 border-emerald-400"></div>
+                    <div class="w-4 h-4 border-t-4 border-r-4 border-emerald-400"></div>
+                </div>
+                <!-- Animated Scan Laser -->
+                <div class="scan-laser absolute left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent shadow-[0_0_8px_#34d399]"></div>
+                <div class="flex justify-between">
+                    <div class="w-4 h-4 border-b-4 border-l-4 border-emerald-400"></div>
+                    <div class="w-4 h-4 border-b-4 border-r-4 border-emerald-400"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Camera Shutter Bar -->
+        <div class="w-full p-6 bg-black/80 flex items-center justify-center z-10">
+            <button id="shutterBtn" class="w-16 h-16 bg-white rounded-full border-4 border-blue-600 shadow-lg active:scale-95 transition flex items-center justify-center">
+                <div class="w-12 h-12 bg-blue-600 rounded-full"></div>
+            </button>
+        </div>
+    </div>
+
+    <!-- CROP ADJUSTMENT MODAL -->
+    <div id="cropModal" class="fixed inset-0 bg-black/90 hidden flex-col items-center justify-between p-4 z-50">
         <div class="text-white text-center py-2">
-            <p class="font-bold text-sm">Crop Document Frame</p>
-            <p class="text-xs text-slate-300">Drag the frame box to crop your paper</p>
+            <p class="font-bold text-sm">Review Page Crop</p>
+            <p class="text-xs text-slate-300">Adjust borders if needed</p>
         </div>
 
         <div class="relative max-w-full max-h-[65vh] flex items-center justify-center overflow-hidden rounded-lg bg-black">
@@ -106,10 +153,13 @@
         </div>
 
         <div class="flex gap-4 w-full max-w-xs my-2">
-            <button id="cancelCropBtn" class="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-medium py-2.5 rounded-xl text-xs">Cancel</button>
-            <button id="confirmCropBtn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-xl text-xs">Crop & Add Page</button>
+            <button id="cancelCropBtn" class="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-medium py-2.5 rounded-xl text-xs">Retake</button>
+            <button id="confirmCropBtn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-xl text-xs">Confirm & Add</button>
         </div>
     </div>
+
+    <!-- Hidden Capture Canvas -->
+    <canvas id="captureCanvas" class="hidden"></canvas>
 
     <!-- Loading Overlay -->
     <div id="loadingOverlay" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden flex-col items-center justify-center text-white z-50">
@@ -117,9 +167,15 @@
         <p id="loadingText" class="font-medium text-sm">Processing image...</p>
     </div>
 
-    <!-- App Engine Logic -->
+    <!-- App Engine Script -->
     <script>
-        const cameraInput = document.getElementById('cameraInput');
+        const openCameraBtn = document.getElementById('openCameraBtn');
+        const liveCameraModal = document.getElementById('liveCameraModal');
+        const videoFeed = document.getElementById('videoFeed');
+        const closeCameraBtn = document.getElementById('closeCameraBtn');
+        const shutterBtn = document.getElementById('shutterBtn');
+        const captureCanvas = document.getElementById('captureCanvas');
+
         const thumbnailContainer = document.getElementById('thumbnailContainer');
         const emptyState = document.getElementById('emptyState');
         const generatePdfBtn = document.getElementById('generatePdfBtn');
@@ -129,56 +185,79 @@
         const loadingOverlay = document.getElementById('loadingOverlay');
         const loadingText = document.getElementById('loadingText');
 
-        // Crop Modal elements
         const cropModal = document.getElementById('cropModal');
         const cropCanvas = document.getElementById('cropCanvas');
         const cancelCropBtn = document.getElementById('cancelCropBtn');
         const confirmCropBtn = document.getElementById('confirmCropBtn');
 
+        let videoStream = null;
         let scannedPages = [];
-        let currentRawImg = null;
-
-        // Crop selection state (percentage based)
+        let capturedImg = null;
         let cropRect = { x: 0.05, y: 0.05, w: 0.9, h: 0.9 };
-        let isDragging = false;
-        let startX, startY;
 
-        cameraInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
+        // Open live camera feed
+        openCameraBtn.addEventListener('click', async () => {
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: { exact: "environment" } },
+                    audio: false
+                });
+            } catch (err) {
+                // Fallback to default user camera if environment camera fails
+                try {
+                    videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                } catch (e) {
+                    alert("Unable to access camera permissions.");
+                    return;
+                }
+            }
+            videoFeed.srcObject = videoStream;
+            liveCameraModal.classList.remove('hidden');
+            liveCameraModal.classList.add('flex');
+        });
 
-            loadingText.innerText = "Loading photo...";
-            loadingOverlay.classList.remove('hidden');
+        function stopCamera() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+            }
+            liveCameraModal.classList.add('hidden');
+            liveCameraModal.classList.remove('flex');
+        }
 
-            const reader = new FileReader();
-            reader.onload = (event) => {
-                const img = new Image();
-                img.onload = () => {
-                    currentRawImg = img;
-                    loadingOverlay.classList.add('hidden');
-                    openCropModal();
-                };
-                img.src = event.target.result;
+        closeCameraBtn.addEventListener('click', stopCamera);
+
+        // Snap photo from live camera feed
+        shutterBtn.addEventListener('click', () => {
+            const ctx = captureCanvas.getContext('2d');
+            captureCanvas.width = videoFeed.videoWidth || 1280;
+            captureCanvas.height = videoFeed.videoHeight || 720;
+            ctx.drawImage(videoFeed, 0, 0, captureCanvas.width, captureCanvas.height);
+
+            const dataUrl = captureCanvas.toDataURL('image/jpeg');
+            capturedImg = new Image();
+            capturedImg.onload = () => {
+                stopCamera();
+                openCropModal();
             };
-            reader.readAsDataURL(file);
+            capturedImg.src = dataUrl;
         });
 
         function openCropModal() {
             cropModal.classList.remove('hidden');
-            cropRect = { x: 0.05, y: 0.05, w: 0.9, h: 0.9 }; // Default 90% document crop area
+            cropModal.classList.add('flex');
+            cropRect = { x: 0.05, y: 0.05, w: 0.9, h: 0.9 };
             drawCropCanvas();
         }
 
         function drawCropCanvas() {
-            if (!currentRawImg) return;
+            if (!capturedImg) return;
             const ctx = cropCanvas.getContext('2d');
-            cropCanvas.width = currentRawImg.width;
-            cropCanvas.height = currentRawImg.height;
+            cropCanvas.width = capturedImg.width;
+            cropCanvas.height = capturedImg.height;
 
-            // Draw image
-            ctx.drawImage(currentRawImg, 0, 0);
+            ctx.drawImage(capturedImg, 0, 0);
 
-            // Draw dark overlay outside crop frame
             ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
             const rx = cropRect.x * cropCanvas.width;
             const ry = cropRect.y * cropCanvas.height;
@@ -190,7 +269,6 @@
             ctx.fillRect(rx + rw, ry, cropCanvas.width - (rx + rw), rh);
             ctx.fillRect(0, ry + rh, cropCanvas.width, cropCanvas.height - (ry + rh));
 
-            // Draw green bounding paper frame
             ctx.strokeStyle = '#22c55e';
             ctx.lineWidth = Math.max(4, Math.round(cropCanvas.width / 150));
             ctx.strokeRect(rx, ry, rw, rh);
@@ -198,20 +276,21 @@
 
         cancelCropBtn.addEventListener('click', () => {
             cropModal.classList.add('hidden');
-            cameraInput.value = '';
+            cropModal.classList.remove('flex');
+            openCameraBtn.click(); // Re-open live camera
         });
 
-        confirmCropBtn.addEventListener('click', async () => {
+        confirmCropBtn.addEventListener('click', () => {
             cropModal.classList.add('hidden');
-            loadingText.innerText = "Processing page filter...";
+            cropModal.classList.remove('flex');
+            loadingText.innerText = "Applying selected filter...";
             loadingOverlay.classList.remove('hidden');
 
             setTimeout(() => {
-                const croppedDataUrl = processCroppedImage(currentRawImg, cropRect, filterModeSelect.value);
-                scannedPages.push(croppedDataUrl);
+                const processedDataUrl = processCroppedImage(capturedImg, cropRect, filterModeSelect.value);
+                scannedPages.push(processedDataUrl);
                 updateUI();
                 loadingOverlay.classList.add('hidden');
-                cameraInput.value = '';
             }, 100);
         });
 
@@ -224,7 +303,6 @@
             const cropW = crop.w * img.width;
             const cropH = crop.h * img.height;
 
-            // Downscale to max 1200px max dimension for fast PDF size
             const MAX_DIM = 1200;
             let width = cropW;
             let height = cropH;
