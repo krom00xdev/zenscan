@@ -1,8 +1,9 @@
-const CACHE_NAME = 'zenscan-v1';
+const CACHE_NAME = 'zenscan-v2';
 const ASSETS = [
   './',
   './index.html',
-  './manifest.json'
+  './manifest.json',
+  './privacy.html'
 ];
 
 self.addEventListener('install', (event) => {
@@ -29,11 +30,6 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
-      }
-      return fetch(event.request);
-    })
+    fetch(event.request).catch(() => caches.match(event.request))
   );
 });
