@@ -4,8 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ZenScan: Fast PDF Scanner</title>
+    
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#2563eb">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ZenScan">
+    <link rel="apple-touch-icon" href="icon-512.png">
+
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- jsPDF Library -->
@@ -20,15 +26,27 @@
     <header class="bg-blue-600 text-white p-4 shadow-md flex items-center justify-between">
         <div>
             <h1 class="text-xl font-bold tracking-wide">ZenScan 📄</h1>
-            <p class="text-xs text-blue-100">100% Offline • Zero Watermarks</p>
+            <p class="text-xs text-blue-100">100% Offline • High Quality PDF</p>
         </div>
         <a href="https://www.buymeacoffee.com/kromdev" target="_blank" rel="noopener noreferrer" class="bg-amber-400 hover:bg-amber-500 text-slate-900 text-xs font-bold py-2 px-3 rounded-lg shadow flex items-center gap-1 transition">
             <span>☕ Donate</span>
         </a>
     </header>
 
-    <!-- Main Container -->
+    <!-- Main App Container -->
     <main class="flex-1 max-w-md w-full mx-auto p-4 flex flex-col gap-4">
+        
+        <!-- Mode Selector (Color / B&W / Grayscale) -->
+        <div class="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider pl-2">Filter Mode:</span>
+            <select id="filterMode" class="bg-slate-100 border border-slate-300 text-slate-700 text-xs font-medium rounded-lg p-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                <option value="color">🎨 Full Color (Default)</option>
+                <option value="bw">📄 High Contrast B&W</option>
+                <option value="grayscale">🩶 Grayscale</option>
+            </select>
+        </div>
+
+        <!-- Action Buttons -->
         <div class="grid grid-cols-2 gap-3">
             <label class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-xl shadow cursor-pointer text-center flex items-center justify-center gap-2 transition">
                 <span>📷 Capture Page</span>
@@ -40,6 +58,7 @@
             </button>
         </div>
 
+        <!-- Scanned Document Queue -->
         <div class="flex-1 bg-white border-2 border-dashed border-slate-200 rounded-2xl p-4 flex flex-col min-h-[250px]">
             <div class="flex justify-between items-center mb-3">
                 <h2 class="text-sm font-bold uppercase tracking-wider text-slate-400">Scanned Queue</h2>
@@ -59,7 +78,6 @@
     <div class="w-full bg-slate-200 border-t border-slate-300 py-2 flex flex-col items-center justify-center min-h-[60px]">
         <p class="text-[10px] text-slate-400 uppercase tracking-widest mb-1">Advertisement</p>
         
-        <!-- Antikatastise to data-ad-client kai data-ad-slot me τα dika sou apo to AdMob -->
         <ins class="adsbygoogle"
              style="display:block; width:100%; max-width:320px; height:50px;"
              data-ad-client="ca-app-pub-2603099615534110~5242761308"
@@ -69,19 +87,37 @@
         <script>
              (adsbygoogle = window.adsbygoogle || []).push({});
         </script>
-        
     </div>
-    
+
+    <!-- Privacy Policy Footer -->
     <footer class="text-center py-2 bg-slate-100 border-t border-slate-200">
-    <a href="privacy.html" class="text-[11px] text-slate-500 hover:underline">Privacy Policy</a>
-</footer>
+        <a href="privacy.html" class="text-[11px] text-slate-500 hover:underline">Privacy Policy</a>
+    </footer>
+
+    <!-- Interactive Crop Frame Modal Overlay -->
+    <div id="cropModal" class="fixed inset-0 bg-black/80 hidden flex-col items-center justify-between p-4 z-50">
+        <div class="text-white text-center py-2">
+            <p class="font-bold text-sm">Crop Document Frame</p>
+            <p class="text-xs text-slate-300">Drag the frame box to crop your paper</p>
+        </div>
+
+        <div class="relative max-w-full max-h-[65vh] flex items-center justify-center overflow-hidden rounded-lg bg-black">
+            <canvas id="cropCanvas" class="max-w-full max-h-[60vh] object-contain"></canvas>
+        </div>
+
+        <div class="flex gap-4 w-full max-w-xs my-2">
+            <button id="cancelCropBtn" class="flex-1 bg-slate-600 hover:bg-slate-700 text-white font-medium py-2.5 rounded-xl text-xs">Cancel</button>
+            <button id="confirmCropBtn" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 rounded-xl text-xs">Crop & Add Page</button>
+        </div>
+    </div>
+
     <!-- Loading Overlay -->
     <div id="loadingOverlay" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden flex-col items-center justify-center text-white z-50">
         <div class="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mb-3"></div>
-        <p id="loadingText" class="font-medium text-sm">Processing image filter...</p>
+        <p id="loadingText" class="font-medium text-sm">Processing image...</p>
     </div>
 
-    <!-- App Logic Script -->
+    <!-- App Engine Logic -->
     <script>
         const cameraInput = document.getElementById('cameraInput');
         const thumbnailContainer = document.getElementById('thumbnailContainer');
@@ -89,76 +125,145 @@
         const generatePdfBtn = document.getElementById('generatePdfBtn');
         const clearAllBtn = document.getElementById('clearAllBtn');
         const pageCountSpan = document.getElementById('pageCount');
+        const filterModeSelect = document.getElementById('filterMode');
         const loadingOverlay = document.getElementById('loadingOverlay');
         const loadingText = document.getElementById('loadingText');
 
-        let scannedPages = [];
+        // Crop Modal elements
+        const cropModal = document.getElementById('cropModal');
+        const cropCanvas = document.getElementById('cropCanvas');
+        const cancelCropBtn = document.getElementById('cancelCropBtn');
+        const confirmCropBtn = document.getElementById('confirmCropBtn');
 
-        cameraInput.addEventListener('change', async (e) => {
+        let scannedPages = [];
+        let currentRawImg = null;
+
+        // Crop selection state (percentage based)
+        let cropRect = { x: 0.05, y: 0.05, w: 0.9, h: 0.9 };
+        let isDragging = false;
+        let startX, startY;
+
+        cameraInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (!file) return;
 
-            loadingText.innerText = "Applying document enhancement...";
+            loadingText.innerText = "Loading photo...";
             loadingOverlay.classList.remove('hidden');
 
-            try {
-                const processedDataUrl = await processDocumentImage(file);
-                scannedPages.push(processedDataUrl);
-                updateUI();
-            } catch (err) {
-                alert("Error processing image. Please try again.");
-                console.error(err);
-            } finally {
-                loadingOverlay.classList.add('hidden');
-                cameraInput.value = '';
-            }
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = new Image();
+                img.onload = () => {
+                    currentRawImg = img;
+                    loadingOverlay.classList.add('hidden');
+                    openCropModal();
+                };
+                img.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
         });
 
-        function processDocumentImage(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    const img = new Image();
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        const ctx = canvas.getContext('2d');
+        function openCropModal() {
+            cropModal.classList.remove('hidden');
+            cropRect = { x: 0.05, y: 0.05, w: 0.9, h: 0.9 }; // Default 90% document crop area
+            drawCropCanvas();
+        }
 
-                        const MAX_DIM = 1200;
-                        let width = img.width;
-                        let height = img.height;
-                        if (width > height && width > MAX_DIM) {
-                            height *= MAX_DIM / width;
-                            width = MAX_DIM;
-                        } else if (height > MAX_DIM) {
-                            width *= MAX_DIM / height;
-                            height = MAX_DIM;
-                        }
+        function drawCropCanvas() {
+            if (!currentRawImg) return;
+            const ctx = cropCanvas.getContext('2d');
+            cropCanvas.width = currentRawImg.width;
+            cropCanvas.height = currentRawImg.height;
 
-                        canvas.width = width;
-                        canvas.height = height;
-                        ctx.drawImage(img, 0, 0, width, height);
+            // Draw image
+            ctx.drawImage(currentRawImg, 0, 0);
 
-                        const imgData = ctx.getImageData(0, 0, width, height);
-                        const data = imgData.data;
-                        
-                        for (let i = 0; i < data.length; i += 4) {
-                            let avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
-                            let threshold = 160;
-                            let v = avg > threshold ? 255 : (avg < 60 ? 0 : avg);
-                            data[i] = v;
-                            data[i + 1] = v;
-                            data[i + 2] = v;
-                        }
+            // Draw dark overlay outside crop frame
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+            const rx = cropRect.x * cropCanvas.width;
+            const ry = cropRect.y * cropCanvas.height;
+            const rw = cropRect.w * cropCanvas.width;
+            const rh = cropRect.h * cropCanvas.height;
 
-                        ctx.putImageData(imgData, 0, 0);
-                        resolve(canvas.toDataURL('image/jpeg', 0.85));
-                    };
-                    img.onerror = reject;
-                    img.src = event.target.result;
-                };
-                reader.onerror = reject;
-                reader.readAsDataURL(file);
-            });
+            ctx.fillRect(0, 0, cropCanvas.width, ry);
+            ctx.fillRect(0, ry, rx, rh);
+            ctx.fillRect(rx + rw, ry, cropCanvas.width - (rx + rw), rh);
+            ctx.fillRect(0, ry + rh, cropCanvas.width, cropCanvas.height - (ry + rh));
+
+            // Draw green bounding paper frame
+            ctx.strokeStyle = '#22c55e';
+            ctx.lineWidth = Math.max(4, Math.round(cropCanvas.width / 150));
+            ctx.strokeRect(rx, ry, rw, rh);
+        }
+
+        cancelCropBtn.addEventListener('click', () => {
+            cropModal.classList.add('hidden');
+            cameraInput.value = '';
+        });
+
+        confirmCropBtn.addEventListener('click', async () => {
+            cropModal.classList.add('hidden');
+            loadingText.innerText = "Processing page filter...";
+            loadingOverlay.classList.remove('hidden');
+
+            setTimeout(() => {
+                const croppedDataUrl = processCroppedImage(currentRawImg, cropRect, filterModeSelect.value);
+                scannedPages.push(croppedDataUrl);
+                updateUI();
+                loadingOverlay.classList.add('hidden');
+                cameraInput.value = '';
+            }, 100);
+        });
+
+        function processCroppedImage(img, crop, filter) {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+
+            const cropX = crop.x * img.width;
+            const cropY = crop.y * img.height;
+            const cropW = crop.w * img.width;
+            const cropH = crop.h * img.height;
+
+            // Downscale to max 1200px max dimension for fast PDF size
+            const MAX_DIM = 1200;
+            let width = cropW;
+            let height = cropH;
+            if (width > height && width > MAX_DIM) {
+                height *= MAX_DIM / width;
+                width = MAX_DIM;
+            } else if (height > MAX_DIM) {
+                width *= MAX_DIM / height;
+                height = MAX_DIM;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+
+            ctx.drawImage(img, cropX, cropY, cropW, cropH, 0, 0, width, height);
+
+            if (filter === 'bw' || filter === 'grayscale') {
+                const imgData = ctx.getImageData(0, 0, width, height);
+                const data = imgData.data;
+
+                for (let i = 0; i < data.length; i += 4) {
+                    let avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+
+                    if (filter === 'bw') {
+                        let threshold = 160;
+                        let v = avg > threshold ? 255 : (avg < 60 ? 0 : avg);
+                        data[i] = v;
+                        data[i + 1] = v;
+                        data[i + 2] = v;
+                    } else if (filter === 'grayscale') {
+                        data[i] = avg;
+                        data[i + 1] = avg;
+                        data[i + 2] = avg;
+                    }
+                }
+                ctx.putImageData(imgData, 0, 0);
+            }
+
+            return canvas.toDataURL('image/jpeg', 0.85);
         }
 
         function updateUI() {
